@@ -1,0 +1,60 @@
+﻿# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# Models and generated data
+*.pt
+*.pth
+*.onnx
+cache/
+uploads/
+
+# Logs and debugging artifacts
+*.log
+*error*.txt
+ps06-build-error.txt
+ps06-kotlin-error.txt
+benchmark_frame.jpg
+camera_*.jpg
+
+# Temporary backups
+*.backup
+*.backup*
+*.before*
+*.wrong-import-backup
+
+# Build and editor files
+build/
+dist/
+node_modules/
+.DS_Store
+Thumbs.db
+
+# Local map cache
+data/map_cache/
+*.phone_backup
+
+# Android build outputs and Gradle caches
+android_camera/.gradle/
+android_camera/**/build/
+android_camera/local.properties
+.gradle/
+
+# Model weights and generated test artifacts
+*.pt
+*.pth
+*.onnx
+benchmark_frame.jpg
+camera_*.jpg
+data/map_cache/
+*.phone_backup

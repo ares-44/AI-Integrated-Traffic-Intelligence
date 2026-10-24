@@ -1,0 +1,840 @@
+import requests
+import pandas as pd
+import streamlit as st
+from datetime import datetime
+
+st.set_page_config(page_title="PS06 Command Centre", page_icon="🚦", layout="wide")
+st.markdown("""
+<style>
+:root { --ps06-accent:#38bdf8; --ps06-border:rgba(148,163,184,.20); }
+[data-testid="stAppViewContainer"] { background: radial-gradient(ellipse at 12% 0%, rgba(14,165,233,.12), transparent 32%), radial-gradient(ellipse at 95% 8%, rgba(99,102,241,.08), transparent 28%), var(--background-color); }
+[data-testid="stSidebar"] { border-right:1px solid var(--ps06-border); }
+.block-container { padding-top:1.35rem; padding-bottom:3rem; max-width:1680px; }
+h1 { letter-spacing:-.04em; font-weight:800 !important; }
+h2,h3 { letter-spacing:-.025em; font-weight:740 !important; }
+[data-testid="stMetric"] { background:linear-gradient(145deg,rgba(56,189,248,.11),rgba(15,23,42,.035)); border:1px solid var(--ps06-border); padding:1rem 1.1rem; border-radius:16px; box-shadow:0 5px 18px rgba(0,0,0,.035); }
+[data-testid="stMetricLabel"] { font-size:.82rem; font-weight:650; }
+[data-testid="stMetricValue"] { font-weight:800; letter-spacing:-.025em; }
+[data-testid="stDataFrame"], [data-testid="stTable"] { border:1px solid var(--ps06-border); border-radius:13px; overflow:hidden; }
+[data-testid="stButton"] button,[data-testid="stDownloadButton"] button { border-radius:10px; font-weight:650; transition:transform .12s ease,border-color .12s ease; }
+[data-testid="stButton"] button:hover,[data-testid="stDownloadButton"] button:hover { transform:translateY(-1px); border-color:var(--ps06-accent); }
+[data-testid="stTextInput"] input,[data-testid="stSelectbox"] [data-baseweb="select"],[data-testid="stNumberInput"] input { border-radius:10px; }
+[data-testid="stAlert"] { border-radius:12px; }
+hr { border-color:var(--ps06-border); margin:1.25rem 0; }
+.ps06-headerbar { display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap; padding:16px 20px; border:1px solid var(--ps06-border); border-radius:18px; background:linear-gradient(115deg,rgba(15,23,42,.72),rgba(30,41,59,.42)); margin:.2rem 0 1rem 0; }
+.ps06-header-title { font-size:1.05rem; font-weight:800; letter-spacing:-.02em; }
+.ps06-header-sub { opacity:.72; font-size:.82rem; margin-top:3px; }
+.ps06-live { color:#34d399; font-weight:750; font-size:.78rem; border:1px solid rgba(52,211,153,.32); background:rgba(52,211,153,.09); padding:6px 10px; border-radius:999px; }
+.ps06-panel { border:1px solid var(--ps06-border); border-radius:15px; padding:14px 16px; background:rgba(148,163,184,.045); margin-bottom:10px; }
+.ps06-alert-critical { border-left:4px solid #ef4444; }
+.ps06-alert-high { border-left:4px solid #f97316; }
+.ps06-alert-warning { border-left:4px solid #eab308; }
+.ps06-timeline { border-left:2px solid rgba(56,189,248,.38); margin-left:8px; padding-left:16px; }
+.ps06-timeline-item { position:relative; padding:0 0 13px 0; }
+.ps06-timeline-item:before { content:''; position:absolute; left:-22px; top:5px; width:9px; height:9px; border-radius:50%; background:#38bdf8; box-shadow:0 0 0 4px rgba(56,189,248,.12); }
+
+.ps06-status { display:flex; gap:10px; align-items:center; flex-wrap:wrap; border:1px solid var(--ps06-border); background:rgba(148,163,184,.055); border-radius:12px; padding:10px 14px; margin:.25rem 0 1.2rem 0; font-size:.86rem; }
+.ps06-pill { display:inline-block; border:1px solid var(--ps06-border); padding:3px 9px; border-radius:999px; font-size:.76rem; font-weight:700; }
+.ps06-muted { opacity:.72; font-size:.84rem; }
+[data-testid="stExpander"] { border:1px solid var(--ps06-border); border-radius:12px; }
+</style>
+""", unsafe_allow_html=True)
+
+with st.sidebar:
+    st.markdown("### ⚙️ Control panel")
+    with st.expander("Connection & operator guide", expanded=False):
+        API = st.text_input("Backend API URL", "http://127.0.0.1:8000", key="ps06_api_url").rstrip("/")
+        st.markdown("**Quick guide**\n- Refresh to fetch a new backend snapshot.\n- Demo seed loads synthetic test data.\n- Verify camera estimates before operational decisions.")
+        st.caption("PS06 · Integrated monitoring prototype")
+    if "ps06_api_url" not in st.session_state:
+        API = "http://127.0.0.1:8000"
+    else:
+        API = st.session_state["ps06_api_url"].rstrip("/")
+
+st.markdown('<div class="ps06-headerbar"><div><div class="ps06-header-title">🚦 PS06 | Integrated Traffic & Crowd Command Centre</div><div class="ps06-header-sub">Unified situational awareness · Crowd intelligence · Traffic operations</div></div><div class="ps06-live">● OPERATIONS VIEW</div></div>', unsafe_allow_html=True)
+st.caption("Hackathon prototype · Use the demo seed button to load clearly labelled synthetic data.")
+status_left, status_mid, status_right = st.columns([2, 2, 1])
+with status_left:
+    st.markdown(f'<div class="ps06-status"><span class="ps06-pill">● API CONFIGURED</span><span class="ps06-muted">{API}</span></div>', unsafe_allow_html=True)
+with status_mid:
+    st.markdown(f'<div class="ps06-status"><span class="ps06-muted">Dashboard session · {datetime.now().strftime("%d %b %Y, %H:%M:%S")}</span></div>', unsafe_allow_html=True)
+with status_right:
+    if st.button("↻ Refresh data", use_container_width=True, help="Fetch the latest dashboard snapshot from the backend"):
+        st.rerun()
+with st.container():
+    if st.button("Load demo scenario", type="primary", width="stretch"):
+        try:
+            r = requests.post(f"{API}/api/demo/seed", timeout=20)
+            r.raise_for_status()
+            st.success(r.json().get("message", "Demo loaded"))
+            st.rerun()
+        except requests.RequestException as e:
+            st.error(f"Could not reach API: {e}")
+try:
+    response = requests.get(f"{API}/api/dashboard", timeout=5)
+    response.raise_for_status()
+    data = response.json()
+except requests.RequestException as e:
+    st.error(f"Backend unavailable at {API}. In a separate terminal, run: python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload")
+    st.stop()
+
+zones = data.get("zones", []) or []
+roads = data.get("roads", []) or []
+alerts = data.get("alerts", []) or []
+
+
+def submit_crowd_observation(zone_name, people_count, movement_score, source):
+    """Send measured video/camera counts to the backend crowd-observation API."""
+    zone = next((z for z in zones if z.get("name") == zone_name), None)
+    if zone is None:
+        raise ValueError(f"Unknown venue zone: {zone_name}")
+    payload = {
+        "zone_id": zone["id"],
+        "people_count": max(0, int(people_count)),
+        "zone_area_m2": zone.get("area_m2"),
+        "incoming_per_min": 0,
+        "outgoing_per_min": 0,
+        "movement_score": max(0.0, min(1.0, float(movement_score))),
+        "source": source,
+    }
+    response = requests.post(f"{API}/api/crowd/observe", json=payload, timeout=10)
+    response.raise_for_status()
+    return response.json()
+zone_metrics = [z["metrics"] for z in zones if z.get("metrics")]
+road_metrics = [r["metrics"] for r in roads if r.get("metrics")]
+critical_crowd = sum(m["risk"] == "CRITICAL" for m in zone_metrics)
+high_traffic = sum(m["congestion"] in ("HEAVY", "SEVERE") for m in road_metrics)
+active_alerts = sum(a["status"] == "ACTIVE" for a in alerts)
+k1, k2, k3, k4 = st.columns(4)
+k1.metric("Zones reporting", f"{len(zone_metrics)}/{len(zones)}")
+k2.metric("Critical crowd zones", critical_crowd)
+k3.metric("Heavy/severe roads", high_traffic)
+k4.metric("Active alerts", active_alerts)
+if data.get("demo_mode"):
+    st.info("Prototype mode. Any row with source=demo is synthetic, not a live sensor observation.")
+
+# Cross-modal incident correlation: rule-based triage across crowd, traffic and alert feeds.
+# This surfaces co-occurring signals; it does not assert that one signal caused another.
+correlation_events = []
+critical_zones = [z for z in zones if (z.get("metrics") or {}).get("risk") == "CRITICAL"]
+high_risk_zones = [z for z in zones if (z.get("metrics") or {}).get("risk") in ("CRITICAL", "HIGH")]
+severe_roads = [r for r in roads if (r.get("metrics") or {}).get("congestion") in ("HEAVY", "SEVERE")]
+active_alert_rows = [a for a in alerts if a.get("status") == "ACTIVE"]
+if critical_zones and severe_roads:
+    correlation_events.append({"priority":"CRITICAL", "title":"Crowd pressure + road congestion", "signals":f"{len(critical_zones)} critical crowd zone(s) and {len(severe_roads)} heavy/severe road(s)", "action":"Review nearby access routes, gate throughput and traffic diversion options."})
+if high_risk_zones and active_alert_rows:
+    correlation_events.append({"priority":"HIGH", "title":"Elevated crowd risk with active alerts", "signals":f"{len(high_risk_zones)} high/critical zone(s) and {len(active_alert_rows)} active alert(s)", "action":"Cross-check alert locations against zone status; assign an operator to verify."})
+if not correlation_events and (high_risk_zones or severe_roads or active_alert_rows):
+    correlation_events.append({"priority":"WATCH", "title":"Single-domain risk signals detected", "signals":f"{len(high_risk_zones)} elevated crowd zone(s), {len(severe_roads)} congested road(s), {len(active_alert_rows)} active alert(s)", "action":"Monitor the feeds for a second corroborating signal."})
+
+main_top, right_alerts = st.columns([2.15, 1], gap="large")
+with main_top:
+    st.markdown("### 🧠 Cross-modal incident correlation")
+    st.caption("Rule-based triage combining crowd risk, road congestion and active alerts. Correlation is not proof of causation.")
+    if correlation_events:
+        for ev in correlation_events:
+            cls = "ps06-alert-critical" if ev["priority"] == "CRITICAL" else "ps06-alert-high" if ev["priority"] == "HIGH" else ""
+            st.markdown(f'<div class="ps06-panel {cls}"><div><b>{ev["priority"]} · {ev["title"]}</b></div><div style="margin-top:5px">{ev["signals"]}</div><div style="opacity:.76;font-size:.86rem;margin-top:7px">Suggested action: {ev["action"]}</div></div>', unsafe_allow_html=True)
+    else:
+        st.success("No cross-domain risk combination detected in the current snapshot.")
+with right_alerts:
+    st.markdown("### 🚨 Priority alerts")
+    priority_alerts = sorted([a for a in alerts if a.get("status") == "ACTIVE"], key=lambda a: {"CRITICAL":0,"HIGH":1,"WARNING":2,"INFO":3}.get(a.get("severity"),4))[:5]
+    if not priority_alerts:
+        st.markdown('<div class="ps06-panel">No active alerts in the current snapshot.</div>', unsafe_allow_html=True)
+    for a in priority_alerts:
+        sev = a.get("severity", "INFO")
+        cls = "ps06-alert-critical" if sev == "CRITICAL" else "ps06-alert-high" if sev == "HIGH" else "ps06-alert-warning" if sev == "WARNING" else ""
+        st.markdown(f'<div class="ps06-panel {cls}"><b>{sev} · {a.get("title", "Alert")}</b><div style="font-size:.84rem;margin-top:5px">{a.get("message", "No message supplied")}</div><div style="opacity:.65;font-size:.75rem;margin-top:6px">{a.get("created_at", "Time unavailable")}</div></div>', unsafe_allow_html=True)
+
+
+# Decision-support snapshot: derived only from the backend data currently returned.
+risk_counts = pd.Series([(z.get("metrics") or {}).get("risk", "NO DATA") for z in zones]).value_counts()
+congestion_counts = pd.Series([(r.get("metrics") or {}).get("congestion", "NO DATA") for r in roads]).value_counts()
+with st.container(border=True):
+    st.markdown("### Operational snapshot")
+    st.caption("A quick triage view of the current backend snapshot. It does not replace operator verification.")
+    snap1, snap2 = st.columns(2)
+    with snap1:
+        st.markdown("**Crowd risk by zone**")
+        if not risk_counts.empty:
+            st.bar_chart(risk_counts.rename_axis("Risk level"), height=190)
+        else:
+            st.caption("No zone data available yet.")
+    with snap2:
+        st.markdown("**Road congestion distribution**")
+        if not congestion_counts.empty:
+            st.bar_chart(congestion_counts.rename_axis("Congestion"), height=190)
+        else:
+            st.caption("No road data available yet.")
+
+st.divider()
+st.subheader("Live crowd density heatmap")
+st.caption("Zone-level density overlay; positions are schematic, not GPS coordinates. Use as a triage visualization, not a geographic map.")
+map_df = pd.DataFrame([{
+    "x": z.get("x", 50), "y": z.get("y", 50),
+    "zone": z["name"], "risk": (z.get("metrics") or {}).get("risk", "NO DATA"),
+    "people": (z.get("metrics") or {}).get("people_count", 0)
+} for z in zones])
+if not map_df.empty:
+    map_df["density"] = [float((z.get("metrics") or {}).get("density_people_m2") or 0) for z in zones]
+    try:
+        import altair as alt
+        heat = alt.Chart(map_df).mark_circle(opacity=0.88, stroke="#e2e8f0", strokeWidth=1).encode(
+            x=alt.X("x:Q", title="Venue layout · X", scale=alt.Scale(zero=False)),
+            y=alt.Y("y:Q", title="Venue layout · Y", scale=alt.Scale(zero=False)),
+            size=alt.Size("people:Q", title="People detected", scale=alt.Scale(range=[250, 1800])),
+            color=alt.Color("density:Q", title="People / m²", scale=alt.Scale(scheme="inferno")),
+            tooltip=["zone:N", "risk:N", "people:Q", alt.Tooltip("density:Q", format=".2f")]
+        ).properties(height=330).interactive()
+        st.altair_chart(heat, width="stretch")
+    except Exception:
+        st.scatter_chart(map_df, x="x", y="y", color="density", size="people", height=330)
+
+st.divider()
+st.subheader("Crowd monitoring")
+crowd_rows = []
+for z in zones:
+    m = z.get("metrics") or {}
+    crowd_rows.append({
+        "Zone": z["name"], "Count": m.get("people_count", "—"),
+        "Density (people/m²)": m.get("density_people_m2", "—"),
+        "Occupancy %": m.get("occupancy_pct", "—"), "Risk": m.get("risk", "NO DATA"),
+        "Source": m.get("source", "—"),
+        "Flow/min (in-out)": m.get("flow_imbalance_per_min", "—")
+    })
+crowd_df = pd.DataFrame(crowd_rows)
+ct1, ct2 = st.columns([2, 1])
+with ct1:
+    crowd_search = st.text_input("Search zones", placeholder="Zone name or source…", key="crowd_table_search")
+with ct2:
+    crowd_risks = st.multiselect("Risk filter", sorted(crowd_df["Risk"].dropna().unique().tolist()), default=sorted(crowd_df["Risk"].dropna().unique().tolist()), key="crowd_risk_filter")
+crowd_view = crowd_df[crowd_df["Risk"].isin(crowd_risks)]
+if crowd_search.strip():
+    crowd_view = crowd_view[crowd_view.astype(str).apply(lambda col: col.str.contains(crowd_search.strip(), case=False, na=False)).any(axis=1)]
+st.caption(f"Showing {len(crowd_view)} of {len(crowd_df)} zones · filter and sort columns directly in the table")
+st.dataframe(crowd_view, width="stretch", hide_index=True)
+st.download_button("Export crowd table · CSV", crowd_view.to_csv(index=False).encode("utf-8"),
+                   file_name="ps06_crowd_status.csv", mime="text/csv", key="export_crowd_table")
+
+st.divider()
+st.subheader("Traffic congestion")
+traffic_rows = []
+for r in roads:
+    m = r.get("metrics") or {}
+    traffic_rows.append({
+        "Road": r["name"], "Vehicles": m.get("vehicle_count", 0),
+        "Relative speed %": m.get("relative_speed_pct", 100),
+        "Queue seconds": m.get("queue_seconds", 0), "Congestion": m.get("congestion", "NO DATA"),
+        "Score": m.get("congestion_score", 0), "Closed": m.get("closed", False),
+        "Source": m.get("source", "—")
+    })
+traffic_df = pd.DataFrame(traffic_rows)
+tt1, tt2 = st.columns([2, 1])
+with tt1:
+    traffic_search = st.text_input("Search roads", placeholder="Road name or source…", key="traffic_table_search")
+with tt2:
+    traffic_levels = st.multiselect("Congestion filter", sorted(traffic_df["Congestion"].dropna().unique().tolist()), default=sorted(traffic_df["Congestion"].dropna().unique().tolist()), key="traffic_level_filter")
+traffic_view = traffic_df[traffic_df["Congestion"].isin(traffic_levels)]
+if traffic_search.strip():
+    traffic_view = traffic_view[traffic_view.astype(str).apply(lambda col: col.str.contains(traffic_search.strip(), case=False, na=False)).any(axis=1)]
+st.caption(f"Showing {len(traffic_view)} of {len(traffic_df)} road segments · filter and sort columns directly in the table")
+st.dataframe(traffic_view, width="stretch", hide_index=True)
+st.download_button("Export traffic table · CSV", traffic_view.to_csv(index=False).encode("utf-8"),
+                   file_name="ps06_traffic_status.csv", mime="text/csv", key="export_traffic_table")
+
+st.divider()
+st.subheader("Route recommendation")
+r1, r2 = st.columns(2)
+with r1:
+    origin = st.selectbox("Origin intersection", ["J1", "J2", "J3", "J4", "VENUE"], index=0)
+with r2:
+    destination = st.selectbox("Destination", ["VENUE", "J1", "J2", "J3", "J4"], index=0)
+if st.button("Calculate best available route"):
+    try:
+        route = requests.get(f"{API}/api/routes/recommend",
+                             params={"origin": origin, "destination": destination}, timeout=5)
+        route.raise_for_status()
+        result = route.json()
+        st.success(f"Route: {' → '.join(result['nodes'])} | estimated {result['estimated_minutes']} min (prototype estimate)")
+        st.write("Road segments:", ", ".join(x["name"] for x in result["roads"]))
+        st.caption(result["note"])
+    except requests.RequestException as e:
+        st.warning(f"Route unavailable: {e}")
+
+st.divider()
+st.subheader("Emergency route simulation")
+with st.form("emergency_form"):
+    vehicle_id = st.text_input("Emergency vehicle ID", "AMB-01")
+    emergency_type = st.selectbox("Type", ["ambulance", "fire", "police", "other"])
+    ec1, ec2 = st.columns(2)
+    with ec1:
+        eorigin = st.selectbox("Emergency origin", ["J1", "J2", "J3", "J4"], key="eo")
+    with ec2:
+        edest = st.selectbox("Emergency destination", ["VENUE", "J1", "J2", "J3", "J4"], key="ed")
+    submitted = st.form_submit_button("Simulate priority route")
+if submitted:
+    try:
+        res = requests.post(f"{API}/api/emergency/route",
+                            json={"vehicle_id": vehicle_id, "emergency_type": emergency_type,
+                                  "origin": eorigin, "destination": edest}, timeout=5)
+        res.raise_for_status()
+        ev = res.json()
+        st.success(f"SIMULATION ONLY · Route: {' → '.join(ev['route'].get('nodes', []))}")
+        st.write(ev["signal_priority"])
+    except requests.RequestException as e:
+        st.error(f"Could not calculate emergency route: {e}")
+
+st.divider()
+st.subheader("Alerts")
+alert_filter_col1, alert_filter_col2 = st.columns(2)
+with alert_filter_col1:
+    alert_severity_filter = st.multiselect("Filter severity", ["CRITICAL", "HIGH", "WARNING", "INFO"], default=["CRITICAL", "HIGH", "WARNING", "INFO"], key="ps06_alert_severity_filter")
+with alert_filter_col2:
+    alert_status_filter = st.multiselect("Filter status", sorted({a.get("status", "UNKNOWN") for a in alerts}), default=sorted({a.get("status", "UNKNOWN") for a in alerts}), key="ps06_alert_status_filter")
+visible_alerts = [a for a in alerts if a.get("severity") in alert_severity_filter and a.get("status") in alert_status_filter]
+st.caption(f"Showing {len(visible_alerts)} of {len(alerts)} alerts")
+if not alerts:
+    st.write("No alerts yet. Load the demo scenario to test alert logic.")
+for alert in sorted(visible_alerts, key=lambda a: {"CRITICAL": 0, "HIGH": 1, "WARNING": 2, "INFO": 3}.get(a.get("severity", "INFO"), 4)):
+    with st.expander(f"{alert['severity']} · {alert['title']} · {alert['status']}"):
+        st.write(alert["message"])
+        st.caption(f"Created: {alert['created_at']}")
+        if alert["status"] == "ACTIVE":
+            note = st.text_input("Operator note", key=f"note_{alert['id']}")
+            ca, cr = st.columns(2)
+            if ca.button("Acknowledge", key=f"ack_{alert['id']}"):
+                try:
+                    requests.post(f"{API}/api/alerts/{alert['id']}/acknowledge",
+                                  json={"note": note}, timeout=5).raise_for_status()
+                    st.rerun()
+                except requests.RequestException as e:
+                    st.error(str(e))
+            if cr.button("Resolve", key=f"resolve_{alert['id']}"):
+                try:
+                    requests.post(f"{API}/api/alerts/{alert['id']}/resolve",
+                                  json={"note": note}, timeout=5).raise_for_status()
+                    st.rerun()
+                except requests.RequestException as e:
+                    st.error(str(e))
+
+# Recent activity timeline built from backend alert records and the current operational snapshot.
+st.divider()
+st.subheader("🕒 Recent activity timeline")
+st.caption("Timeline is assembled from available backend alert timestamps and the current snapshot; it is not a separate audit log.")
+timeline = []
+for a in alerts:
+    timeline.append({"time": str(a.get("created_at", "")), "severity": a.get("severity", "INFO"), "title": a.get("title", "Alert"), "detail": a.get("message", ""), "status": a.get("status", "UNKNOWN")})
+for z in zones:
+    m = z.get("metrics") or {}
+    if m:
+        timeline.append({"time": str(m.get("updated_at", m.get("timestamp", ""))), "severity": m.get("risk", "INFO"), "title": f"Crowd snapshot · {z.get('name', 'Zone')}", "detail": f"Count: {m.get('people_count', '—')} · density: {m.get('density_people_m2', '—')} people/m² · source: {m.get('source', '—')}", "status": "OBSERVED"})
+
+def _timeline_sort(item):
+    try:
+        return pd.to_datetime(item["time"], errors="coerce", utc=True)
+    except Exception:
+        return pd.NaT
+valid_timeline = [x for x in timeline if x.get("time") and x.get("time") not in ("None", "")]
+valid_timeline.sort(key=lambda x: str(_timeline_sort(x)), reverse=True)
+if valid_timeline:
+    st.markdown('<div class="ps06-timeline">', unsafe_allow_html=True)
+    for item in valid_timeline[:10]:
+        st.markdown(f'<div class="ps06-timeline-item"><b>{item["severity"]} · {item["title"]}</b><div style="font-size:.82rem;opacity:.7">{item["time"]} · {item["status"]}</div><div style="margin-top:3px">{item["detail"]}</div></div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+else:
+    st.info("No timestamped activity is available yet. Load the demo scenario or submit camera observations to populate the feed.")
+
+# ================= VIDEO-BASED CROWD DETECTION =================
+st.divider()
+st.subheader("Video-based crowd detection")
+st.caption("Prototype YOLO tracking estimates movement between sampled frames. Results depend on camera angle and video quality.")
+
+uploaded_video = st.file_uploader("Upload a crowd video", type=["mp4", "avi", "mov", "mkv"],
+                                  key="ps06_crowd_video")
+
+if uploaded_video is not None:
+    zone_names = [z["name"] for z in zones]
+    if not zone_names:
+        st.warning("No venue zones are configured in the backend.")
+    else:
+        video_zone = st.selectbox("Select venue zone", zone_names, key="ps06_video_zone")
+        if st.button("Analyze uploaded video", key="ps06_analyze_video"):
+            import os
+            import tempfile
+            input_path = output_path = None
+            cap = writer = None
+            try:
+                import cv2
+                from ultralytics import YOLO
+
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_in:
+                    temp_in.write(uploaded_video.getvalue())
+                    input_path = temp_in.name
+
+                cap = cv2.VideoCapture(input_path)
+                if not cap.isOpened():
+                    raise ValueError("Could not open this video. Try another MP4 file.")
+
+                fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+                total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                if width <= 0 or height <= 0:
+                    raise ValueError("The video has invalid dimensions.")
+
+                sample_step = max(1, total_frames // 300) if total_frames > 0 else 1
+                model = YOLO("yolov8n.pt")
+
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_out:
+                    output_path = temp_out.name
+                writer = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*"mp4v"),
+                                         max(1.0, fps / sample_step), (width, height))
+                if not writer.isOpened():
+                    raise RuntimeError("Could not create annotated video output.")
+
+                progress = st.progress(0)
+                status = st.empty()
+                sampled_frames = total_detections = peak_count = frame_index = 0
+                track_positions = {}
+                track_displacements = {}
+                direction_counts = {"left": 0, "right": 0, "up": 0, "down": 0}
+                tracked_ids_seen = set()
+
+                while True:
+                    ok, frame = cap.read()
+                    if not ok:
+                        break
+                    if frame_index % sample_step == 0:
+                        result = model.track(
+                            frame, classes=[0], conf=0.35, persist=True,
+                            tracker="bytetrack.yaml", verbose=False
+                        )[0]
+                        count = len(result.boxes)
+                        sampled_frames += 1
+                        total_detections += count
+                        peak_count = max(peak_count, count)
+
+                        # Track center points between sampled frames.
+                        if result.boxes is not None and result.boxes.id is not None:
+                            ids = result.boxes.id.int().cpu().tolist()
+                            boxes = result.boxes.xyxy.cpu().tolist()
+                            for track_id, box in zip(ids, boxes):
+                                x1, y1, x2, y2 = box
+                                center = ((x1 + x2) / 2, (y1 + y2) / 2)
+                                tracked_ids_seen.add(track_id)
+                                previous = track_positions.get(track_id)
+                                if previous is not None:
+                                    dx = center[0] - previous[0]
+                                    dy = center[1] - previous[1]
+                                    distance = (dx * dx + dy * dy) ** 0.5
+                                    track_displacements[track_id] = (
+                                        track_displacements.get(track_id, 0.0) + distance
+                                    )
+                                    if abs(dx) >= abs(dy) and abs(dx) > 2:
+                                        direction_counts["right" if dx > 0 else "left"] += 1
+                                    elif abs(dy) > 2:
+                                        direction_counts["down" if dy > 0 else "up"] += 1
+                                track_positions[track_id] = center
+
+                        writer.write(result.plot())
+                        if total_frames > 0:
+                            progress.progress(min(1.0, frame_index / total_frames))
+                        status.write(f"Analyzed frame {frame_index + 1} of {total_frames}")
+                    frame_index += 1
+
+                cap.release()
+                cap = None
+                writer.release()
+                writer = None
+                progress.progress(1.0)
+                status.success("Video analysis complete.")
+
+                average_count = total_detections / sampled_frames if sampled_frames else 0
+
+                # Push the peak observed count into the selected zone's backend metrics.
+                # This is a sampled-frame peak, not a unique-person count.
+                video_track_count = len(tracked_ids_seen)
+                moving_tracks = sum(distance > 12 for distance in track_displacements.values())
+                video_movement_score = (
+                    min(1.0, moving_tracks / max(1, video_track_count))
+                    if video_track_count else 0.0
+                )
+                try:
+                    observation_result = submit_crowd_observation(
+                        video_zone, peak_count, video_movement_score, "video"
+                    )
+                    st.success(
+                        f"Backend updated for {video_zone}: peak count {peak_count} "
+                        f"(source=video). Refresh the dashboard metrics to verify."
+                    )
+                    with st.expander("Backend observation response"):
+                        st.json(observation_result)
+                except (requests.RequestException, ValueError) as api_exc:
+                    st.error(
+                        "Video analysis succeeded, but the backend zone update failed: "
+                        f"{api_exc}"
+                    )
+
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Peak people detected", peak_count)
+                c2.metric("Average per sampled frame", f"{average_count:.1f}")
+                c3.metric("Frames analyzed", sampled_frames)
+
+                st.markdown("**Crowd movement analysis (image-coordinate estimate)**")
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Track IDs observed", len(tracked_ids_seen))
+                m2.metric("Tracks with movement", moving_tracks)
+                dominant_direction = max(direction_counts, key=direction_counts.get)
+                direction_total = sum(direction_counts.values())
+                m3.metric(
+                    "Most observed direction",
+                    dominant_direction.title() if direction_total else "Insufficient movement"
+                )
+                if direction_total:
+                    st.caption(
+                        "Direction is relative to the camera image, not compass direction. "
+                        f"Direction observations: {direction_counts}."
+                    )
+                video_report = pd.DataFrame([
+                    {"metric": "zone", "value": video_zone},
+                    {"metric": "peak_people_detected", "value": peak_count},
+                    {"metric": "average_detections_per_sampled_frame", "value": round(average_count, 2)},
+                    {"metric": "frames_analyzed", "value": sampled_frames},
+                    {"metric": "track_ids_observed", "value": len(tracked_ids_seen)},
+                    {"metric": "tracks_with_movement", "value": moving_tracks},
+                    {"metric": "dominant_direction_image_coordinates", "value": dominant_direction if direction_total else "insufficient movement"},
+                    {"metric": "direction_observations", "value": str(direction_counts)},
+                    {"metric": "threshold_note", "value": "30 detections is illustrative, not a validated safety limit"},
+                ])
+                st.download_button(
+                    "Download crowd analysis report (CSV)",
+                    data=video_report.to_csv(index=False).encode("utf-8"),
+                    file_name="ps06_video_crowd_report.csv",
+                    mime="text/csv",
+                    key="ps06_video_report_csv",
+                )
+                if peak_count >= 30 and moving_tracks < max(1, len(track_displacements) // 4):
+                    st.warning(
+                        f"Possible crowd bottleneck in {video_zone}: high detected count "
+                        "with limited observed movement. Review the footage; this is an "
+                        "experimental indicator, not a validated safety alert."
+                    )
+                elif peak_count >= 30:
+                    st.warning(f"Potential high crowd count in {video_zone}. Review footage and verify a venue-specific threshold.")
+                else:
+                    st.success(f"No high-count flag triggered for {video_zone}. This does not guarantee the area is safe.")
+
+                with open(output_path, "rb") as result_file:
+                    annotated_bytes = result_file.read()
+                st.markdown("**Annotated video**")
+                st.video(annotated_bytes)
+                st.download_button("Download annotated video", data=annotated_bytes,
+                                   file_name="ps06_annotated_crowd.mp4", mime="video/mp4")
+            except Exception as exc:
+                st.error(f"Video analysis failed: {exc}")
+            finally:
+                if cap is not None:
+                    cap.release()
+                if writer is not None:
+                    writer.release()
+                for path in (input_path, output_path):
+                    if path and os.path.exists(path):
+                        try:
+                            os.remove(path)
+                        except OSError:
+                            pass
+
+
+# ================= LIVE CAMERA CROWD MONITORING =================
+st.divider()
+st.subheader("Live camera crowd monitoring")
+st.caption(
+    "Bounded camera sampling prototype. The camera is accessed by the machine running Streamlit. "
+    "Counts are per sampled frame, not unique people; direction is relative to the image."
+)
+
+camera_mode = st.radio(
+    "Camera source",
+    ["Local webcam", "IP / RTSP camera"],
+    horizontal=True,
+    key="ps06_live_camera_mode",
+)
+camera_url = ""
+if camera_mode == "IP / RTSP camera":
+    camera_url = st.text_input(
+        "Camera stream URL",
+        placeholder="rtsp://your-camera-address/stream",
+        help="Use only a camera stream you are authorized to access. Avoid sharing URLs containing passwords.",
+        key="ps06_live_camera_url",
+    )
+capture_seconds = st.slider(
+    "Capture duration (seconds)", min_value=5, max_value=20, value=10,
+    key="ps06_live_camera_duration",
+)
+if st.button("Start camera capture and analyze", type="primary", key="ps06_start_camera_analysis"):
+    import time
+    import cv2
+    from ultralytics import YOLO
+
+    cap = None
+    try:
+        if camera_mode == "IP / RTSP camera":
+            if not camera_url.strip():
+                st.warning("Enter the authorized camera stream URL first.")
+                st.stop()
+            source = camera_url.strip()
+            cap = cv2.VideoCapture(source)
+        else:
+            # DirectShow is usually more reliable for local webcams on Windows.
+            cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+            if not cap.isOpened():
+                cap.release()
+                cap = cv2.VideoCapture(0)
+
+        if not cap.isOpened():
+            raise RuntimeError(
+                "Could not open the camera. Check camera permissions, close apps using it, "
+                "or verify the IP/RTSP stream URL."
+            )
+
+        model = YOLO("yolov8n.pt")
+        frame_slot = st.empty()
+        status_slot = st.empty()
+        progress_slot = st.progress(0)
+        total_detections = peak_count = sampled_frames = 0
+        track_positions = {}
+        track_displacements = {}
+        tracked_ids_seen = set()
+        direction_counts = {"left": 0, "right": 0, "up": 0, "down": 0}
+        started = time.monotonic()
+        last_frame = None
+
+        while time.monotonic() - started < capture_seconds and sampled_frames < 250:
+            ok, frame = cap.read()
+            if not ok:
+                # Avoid an unbounded loop if an RTSP feed disconnects.
+                if sampled_frames == 0:
+                    raise RuntimeError("Camera opened but no frames were received.")
+                break
+
+            # Process every second frame to keep CPU use manageable.
+            if sampled_frames % 2 == 0:
+                result = model.track(
+                    frame, classes=[0], conf=0.35, persist=True,
+                    tracker="bytetrack.yaml", verbose=False
+                )[0]
+                count = len(result.boxes)
+                sampled_frames += 1
+                total_detections += count
+                peak_count = max(peak_count, count)
+
+                if result.boxes is not None and result.boxes.id is not None:
+                    ids = result.boxes.id.int().cpu().tolist()
+                    boxes = result.boxes.xyxy.cpu().tolist()
+                    for track_id, box in zip(ids, boxes):
+                        x1, y1, x2, y2 = box
+                        center = ((x1 + x2) / 2, (y1 + y2) / 2)
+                        tracked_ids_seen.add(track_id)
+                        previous = track_positions.get(track_id)
+                        if previous is not None:
+                            dx = center[0] - previous[0]
+                            dy = center[1] - previous[1]
+                            distance = (dx * dx + dy * dy) ** 0.5
+                            track_displacements[track_id] = (
+                                track_displacements.get(track_id, 0.0) + distance
+                            )
+                            if abs(dx) >= abs(dy) and abs(dx) > 2:
+                                direction_counts["right" if dx > 0 else "left"] += 1
+                            elif abs(dy) > 2:
+                                direction_counts["down" if dy > 0 else "up"] += 1
+                        track_positions[track_id] = center
+
+                last_frame = result.plot()
+                frame_slot.image(cv2.cvtColor(last_frame, cv2.COLOR_BGR2RGB),
+                                 channels="RGB", caption="Annotated camera sample",
+                                 width="stretch")
+                elapsed = time.monotonic() - started
+                progress_slot.progress(min(1.0, elapsed / capture_seconds))
+                status_slot.write(
+                    f"Capturing and analyzing… {min(capture_seconds, int(elapsed))}s / "
+                    f"{capture_seconds}s · sampled frames: {sampled_frames}"
+                )
+            else:
+                sampled_frames += 1
+
+        cap.release()
+        cap = None
+        progress_slot.progress(1.0)
+        status_slot.success("Camera sampling complete.")
+
+        # Count metrics are based only on processed frames.
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Peak people detected", peak_count)
+        processed_frames = max(1, (sampled_frames + 1) // 2)
+        c2.metric(
+            "Average detections / processed frame",
+            f"{total_detections / processed_frames:.1f}",
+        )
+        c3.metric("Track IDs observed", len(tracked_ids_seen))
+
+        moving_tracks = sum(distance > 12 for distance in track_displacements.values())
+        dominant_direction = max(direction_counts, key=direction_counts.get)
+
+        camera_zone = st.selectbox(
+            "Venue zone for this camera observation",
+            [z["name"] for z in zones],
+            key="ps06_camera_zone",
+        )
+        camera_track_count = len(tracked_ids_seen)
+        camera_movement_score = (
+            min(1.0, moving_tracks / max(1, camera_track_count))
+            if camera_track_count else 0.0
+        )
+        try:
+            observation_result = submit_crowd_observation(
+                camera_zone, peak_count, camera_movement_score, "live"
+            )
+            st.success(
+                f"Backend updated for {camera_zone}: peak count {peak_count} "
+                "(source=live). Refresh the dashboard metrics to verify."
+            )
+            with st.expander("Backend observation response"):
+                st.json(observation_result)
+        except (requests.RequestException, ValueError) as api_exc:
+            st.error(
+                "Camera analysis succeeded, but the backend zone update failed: "
+                f"{api_exc}"
+            )
+        direction_total = sum(direction_counts.values())
+        d1, d2 = st.columns(2)
+        d1.metric("Tracks with movement", moving_tracks)
+        d2.metric(
+            "Most observed direction",
+            dominant_direction.title() if direction_total else "Insufficient movement",
+        )
+        if direction_total:
+            st.caption(
+                "Movement direction is relative to the camera image, not compass direction. "
+                f"Direction observations: {direction_counts}."
+            )
+        camera_report = pd.DataFrame([
+            {"metric": "camera_source_type", "value": camera_mode},
+            {"metric": "peak_people_detected", "value": peak_count},
+            {"metric": "average_detections_per_processed_frame", "value": round(total_detections / processed_frames, 2)},
+            {"metric": "frames_processed", "value": processed_frames},
+            {"metric": "track_ids_observed", "value": len(tracked_ids_seen)},
+            {"metric": "tracks_with_movement", "value": moving_tracks},
+            {"metric": "dominant_direction_image_coordinates", "value": dominant_direction if direction_total else "insufficient movement"},
+            {"metric": "direction_observations", "value": str(direction_counts)},
+            {"metric": "threshold_note", "value": "30 detections is illustrative, not a validated safety limit"},
+        ])
+        st.download_button(
+            "Download camera analysis report (CSV)",
+            data=camera_report.to_csv(index=False).encode("utf-8"),
+            file_name="ps06_camera_crowd_report.csv",
+            mime="text/csv",
+            key="ps06_camera_report_csv",
+        )
+        if peak_count >= 30 and moving_tracks < max(1, len(track_displacements) // 4):
+            st.warning(
+                "Possible crowd bottleneck: high detected count with limited observed movement. "
+                "Review the footage; this is an experimental indicator, not a validated safety alert."
+            )
+        elif peak_count >= 30:
+            st.warning(
+                "Potential high crowd count. Verify against a venue-specific threshold and review the footage."
+            )
+        else:
+            st.info(
+                "No high-count flag triggered by the illustrative threshold. This does not guarantee the area is safe."
+            )
+    except Exception as exc:
+        st.error(f"Live camera analysis failed: {exc}")
+    finally:
+        if cap is not None:
+            cap.release()
+
+
+# ================= EMERGENCY EVENT LOG =================
+st.divider()
+st.subheader("Emergency event log")
+if data.get("emergency_events", []):
+    st.dataframe(pd.DataFrame([{
+        "Vehicle": e["vehicle_id"], "Type": e["emergency_type"],
+        "Route": " → ".join(e["route"].get("nodes", [])),
+        "Mode": e["mode"], "Created": e["created_at"]
+    } for e in data.get("emergency_events", [])]), width="stretch", hide_index=True)
+
+
+# ================= AI VEHICLE DETECTION =================
+st.divider()
+st.subheader("🚘 AI vehicle detection")
+st.caption("Separate YOLO pass for cars, motorcycles, buses and trucks. This is a sampled-video prototype; counts are not a calibrated traffic sensor.")
+vehicle_video = st.file_uploader("Upload road / intersection footage", type=["mp4", "avi", "mov", "mkv"], key="ps06_vehicle_video")
+if vehicle_video is not None:
+    if st.button("Run AI vehicle detection", type="primary", key="ps06_run_vehicle_detection"):
+        temp_vehicle_path = None
+        vehicle_cap = None
+        try:
+            import cv2
+            import tempfile
+            from ultralytics import YOLO
+            suffix = "." + vehicle_video.name.rsplit(".", 1)[-1] if "." in vehicle_video.name else ".mp4"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                tmp.write(vehicle_video.getbuffer())
+                temp_vehicle_path = tmp.name
+            vehicle_cap = cv2.VideoCapture(temp_vehicle_path)
+            if not vehicle_cap.isOpened():
+                raise RuntimeError("Could not open the uploaded road video.")
+            model = YOLO("yolov8n.pt")
+            total_frames = int(vehicle_cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+            fps = float(vehicle_cap.get(cv2.CAP_PROP_FPS) or 0)
+            sample_step = max(1, int(fps * 0.5)) if fps > 0 else 12
+            frame_idx = 0
+            processed = 0
+            peak_vehicles = 0
+            vehicle_class_names = {2: "Car", 3: "Motorcycle", 5: "Bus", 7: "Truck"}
+            class_totals = {v: 0 for v in vehicle_class_names.values()}
+            annotated_preview = None
+            progress = st.progress(0.0, text="Loading vehicle detector…")
+            max_samples = max(1, min(240, total_frames // sample_step + 1)) if total_frames else 240
+            while processed < max_samples:
+                ok, frame = vehicle_cap.read()
+                if not ok:
+                    break
+                if frame_idx % sample_step == 0:
+                    results = model.track(frame, persist=True, classes=[2, 3, 5, 7], conf=0.30, verbose=False)
+                    result = results[0]
+                    boxes = result.boxes
+                    counts = {v: 0 for v in vehicle_class_names.values()}
+                    if boxes is not None and len(boxes) > 0:
+                        for cls_id in boxes.cls.cpu().numpy().astype(int).tolist():
+                            if cls_id in vehicle_class_names:
+                                counts[vehicle_class_names[cls_id]] += 1
+                    for name, count in counts.items():
+                        class_totals[name] += count
+                    peak_vehicles = max(peak_vehicles, sum(counts.values()))
+                    if annotated_preview is None:
+                        annotated_preview = result.plot()
+                    processed += 1
+                    if total_frames:
+                        progress.progress(min(1.0, frame_idx / max(1, total_frames)), text=f"Analyzing sampled frames · {processed} processed")
+                frame_idx += 1
+            progress.empty()
+            if annotated_preview is not None:
+                v1, v2 = st.columns([1.5, 1])
+                with v1:
+                    st.image(cv2.cvtColor(annotated_preview, cv2.COLOR_BGR2RGB), caption="Annotated sample frame", width="stretch")
+                with v2:
+                    st.metric("Peak vehicles in a sampled frame", peak_vehicles)
+                    st.metric("Frames analyzed", processed)
+                    st.dataframe(pd.DataFrame([{"Vehicle class": k, "Detections across sampled frames": v} for k, v in class_totals.items()]), hide_index=True, width="stretch")
+                st.caption("Class totals count detections across sampled frames; the same vehicle may be counted repeatedly. Peak vehicles is the maximum simultaneous count in one sampled frame.")
+            else:
+                st.warning("No vehicle detections were produced. Try a clearer road video with vehicles visible.")
+        except Exception as vehicle_exc:
+            st.error(f"Vehicle detection failed: {vehicle_exc}. Ensure ultralytics and OpenCV are installed and model weights can be loaded.")
+        finally:
+            if vehicle_cap is not None:
+                vehicle_cap.release()
